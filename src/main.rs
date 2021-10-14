@@ -2,7 +2,7 @@ pub mod runs;
 
 use std::{convert::TryInto, os::unix::prelude::{AsRawFd, FromRawFd}};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Error, Result};
 use chrono::{DateTime, Utc};
 use fork::{daemon, Fork};
 use nix::{sys::signal, unistd::Pid};
@@ -56,7 +56,9 @@ enum Args {
 }
 
 fn start(runs: &Runs, command: Vec<String>, label: Option<String>) -> Result<()> {
-    // TODO check that `command` is valid
+    if command.is_empty() {
+        return Err(Error::msg("Given command is empty"));
+    }
 
     if let Ok(Fork::Child) = daemon(true, false) {
         let run = runs.new_run()?;
