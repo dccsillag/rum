@@ -1,9 +1,19 @@
-use std::{collections::HashMap, path::PathBuf, process::ExitStatus};
+use std::{
+    collections::HashMap,
+    convert::TryInto,
+    io::{Read, Seek, Write},
+    os::unix::prelude::{AsRawFd, FromRawFd},
+    path::PathBuf,
+    process::ExitStatus,
+    sync::mpsc::channel,
+};
 
 use anyhow::{Context, Error, Result};
 use chrono::{DateTime, Utc};
-use nix::unistd::Pid;
+use nix::{sys::signal, unistd::Pid};
+use notify::Watcher;
 use serde::{Deserialize, Serialize};
+use termion::{event::Key, input::TermRead, raw::IntoRawMode};
 use uuid::Uuid;
 
 pub type RunId = String;
@@ -112,12 +122,12 @@ impl Run {
         .with_context(|| format!("Could not parse JSON in {:?}", &data_file))
     }
 
-    pub fn set_data(&self, run: &RunData) -> Result<()> {
+    fn set_data(&self, run: &RunData) -> Result<()> {
         serde_json::to_writer(std::fs::File::create(self.get_data_file())?, run)?;
         Ok(())
     }
 
-    pub fn update_data<F>(&self, f: F) -> Result<()>
+    fn update_data<F>(&self, f: F) -> Result<()>
     where
         F: Fn(RunData) -> Result<RunData>,
     {
@@ -126,6 +136,121 @@ impl Run {
         self.set_data(&data)?;
 
         Ok(())
+    }
+
+    pub fn start(&self, command: Vec<String>, label: Option<String>) -> Result<()> {
+        let output_file_path = self.get_output_file();
+        let output_file = std::fs::File::create(output_file_path)?;
+        let output_file_raw = output_file.as_raw_fd();
+
+        let mut process: std::process::Child = std::process::Command::new(command.first().unwrap())
+            .args(&command[1..])
+            .stdout(unsafe { std::process::Stdio::from_raw_fd(output_file_raw) })
+            .stderr(unsafe { std::process::Stdio::from_raw_fd(output_file_raw) })
+            .stdin(std::process::Stdio::null())
+            .spawn()?;
+
+        self.set_data(&RunData {
+            command: command,
+            label: label,
+            done_data: None,
+            start_datetime: Utc::now(),
+
+            pid: Pid::from_raw(process.id().try_into().unwrap()),
+        })?;
+
+        let exit_status = process.wait()?;
+
+        self.update_data(|run_data| {
+            Ok(RunData {
+                done_data: Some(RunDoneData {
+                    exit_code: exit_status,
+                    end_datetime: Utc::now(),
+                }),
+                ..run_data
+            })
+        })?;
+
+        Ok(())
+    }
+
+    pub fn open(&self, interactable: bool) -> Result<()> {
+        let output_file_path = self.get_output_file();
+
+        let (tx, rx) = channel();
+        let mut watcher: notify::RecommendedWatcher =
+            Watcher::new(tx, std::time::Duration::from_millis(50))?;
+        watcher.watch(&output_file_path, notify::RecursiveMode::NonRecursive)?;
+
+        let mut screen =
+            termion::screen::AlternateScreen::from(std::io::stdout()).into_raw_mode()?;
+        let mut input = std::io::stdin().keys();
+
+        let mut file = std::fs::File::open(&output_file_path)?;
+        let mut buffer = String::new();
+        let mut seek_location = 0; // TODO what happens when the file is really big?
+
+        let mut update_output = || -> Result<()> {
+            file.seek(std::io::SeekFrom::Start(seek_location))?;
+            let how_much_was_read = file.read_to_string(&mut buffer)?;
+            buffer = buffer.replace('\n', "\r\n");
+            seek_location += how_much_was_read as u64;
+            write!(screen, "{}", buffer)?;
+            buffer.clear();
+
+            // FIXME what if the output is already styled?
+            write!(
+                screen,
+                "{}{}{}{}",
+                termion::cursor::Save,
+                termion::cursor::Goto(1, 1),
+                termion::clear::CurrentLine,
+                termion::style::Faint,
+            )?;
+            write!(
+                screen,
+                "You are currently viewing a run. Press Ctrl+C to exit."
+            )?;
+            write!(
+                screen,
+                "{}",
+                termion::cursor::Goto(termion::terminal_size()?.0 - (self.id.len() as u16) + 1, 1),
+            )?;
+            write!(screen, "{}", self.id)?;
+            write!(
+                screen,
+                "{}{}",
+                termion::style::NoFaint,
+                termion::cursor::Restore
+            )?;
+
+            screen.flush()?;
+
+            Ok(())
+        };
+
+        update_output()?;
+        'mainloop: loop {
+            match rx.try_recv() {
+                Ok(notify::DebouncedEvent::Write(_)) => update_output()?,
+                Ok(_) => (),
+                Err(_) => std::thread::sleep(std::time::Duration::from_millis(10)),
+            }
+
+            while let Some(key) = input.next() {
+                match key? {
+                    Key::Ctrl('c') => break 'mainloop,
+                    _ => (),
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn send_signal(&self, signal: signal::Signal) -> Result<()> {
+        signal::kill(self.get_data()?.pid, signal)
+            .with_context(|| "Couldn't send signal to run's process")
     }
 }
 
