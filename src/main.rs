@@ -14,8 +14,15 @@ use termion::{event::Key, input::TermRead, raw::IntoRawMode};
 
 #[derive(StructOpt)]
 #[structopt(name = "rum", about = "A tool to manage running jobs.")]
-enum Args {
+struct Args {
+    #[structopt(subcommand)]
+    subcommand: Subcommand,
+}
+
+#[derive(StructOpt)]
+enum Subcommand {
     /// Start a new run
+    #[structopt(name = "start")]
     Start {
         /// Command to run
         command: Vec<String>,
@@ -26,33 +33,39 @@ enum Args {
     },
 
     /// List runs
+    #[structopt(name = "list")]
     List,
 
     /// Open a run
+    #[structopt(name = "view")]
     OpenRun {
         /// Which run to open
         run: RunId,
     },
 
     /// Delete a run
+    #[structopt(name = "remove")]
     DeleteRun {
         /// Which run to delete
         run: RunId,
     },
 
     /// Interrupt (Ctrl+C) a running run
+    #[structopt(name = "interrupt")]
     InterruptRun {
         /// Which run to open
         run: RunId,
     },
 
     /// Terminate (SIGTERM) a running run
+    #[structopt(name = "terminate")]
     TerminateRun {
         /// Which run to open
         run: RunId,
     },
 
     /// Kill (SIGKILL) a running run
+    #[structopt(name = "kill")]
     KillRun {
         /// Which run to open
         run: RunId,
@@ -247,13 +260,17 @@ fn main() -> Result<()> {
 
     let runs = Runs::new().with_context(|| "Could not acquire runs")?;
 
-    match args {
-        Args::Start { command, label } => start(&runs, command, label),
-        Args::List => list_runs(&runs),
-        Args::OpenRun { run } => open_run(&runs.get_run(&run)?),
-        Args::DeleteRun { run } => delete(&runs, runs.get_run(&run)?),
-        Args::InterruptRun { run } => send_signal(&runs.get_run(&run)?, signal::Signal::SIGINT),
-        Args::TerminateRun { run } => send_signal(&runs.get_run(&run)?, signal::Signal::SIGTERM),
-        Args::KillRun { run } => send_signal(&runs.get_run(&run)?, signal::Signal::SIGKILL),
+    match args.subcommand {
+        Subcommand::Start { command, label } => start(&runs, command, label),
+        Subcommand::List => list_runs(&runs),
+        Subcommand::OpenRun { run } => open_run(&runs.get_run(&run)?),
+        Subcommand::DeleteRun { run } => delete(&runs, runs.get_run(&run)?),
+        Subcommand::InterruptRun { run } => {
+            send_signal(&runs.get_run(&run)?, signal::Signal::SIGINT)
+        }
+        Subcommand::TerminateRun { run } => {
+            send_signal(&runs.get_run(&run)?, signal::Signal::SIGTERM)
+        }
+        Subcommand::KillRun { run } => send_signal(&runs.get_run(&run)?, signal::Signal::SIGKILL),
     }
 }
