@@ -1,15 +1,22 @@
 pub mod runs;
 
-use std::{convert::TryInto, os::unix::prelude::{AsRawFd, FromRawFd}};
+use std::{
+    convert::TryInto,
+    io::{Read, Seek},
+    os::unix::prelude::{AsRawFd, FromRawFd},
+    sync::mpsc::channel,
+    time::Duration,
+};
 
 use anyhow::{Context, Error, Result};
 use chrono::{DateTime, Utc};
 use fork::{daemon, Fork};
 use nix::{sys::signal, unistd::Pid};
+use notify::Watcher;
 use structopt::StructOpt;
 use tabled::{Table, Tabled};
 
-use runs::{RunData, RunDoneData, RunId, Runs};
+use runs::{Run, RunData, RunDoneData, RunId, Runs};
 
 #[derive(StructOpt)]
 #[structopt(name = "rum", about = "A tool to manage running jobs.")]
@@ -177,8 +184,28 @@ fn list(runs: &Runs) -> Result<()> {
     Ok(())
 }
 
-fn open(run: &RunData, interactable: bool) -> Result<()> {
-    todo!()
+fn open(run: &Run, interactable: bool) -> Result<()> {
+    let output_file_path = run.get_output_file();
+
+    let (tx, rx) = channel();
+    let mut watcher: notify::RecommendedWatcher = Watcher::new(tx, Duration::from_millis(50))?;
+    watcher.watch(&output_file_path, notify::RecursiveMode::NonRecursive)?;
+
+    let mut file = std::fs::File::open(&output_file_path)?;
+    let mut buffer = String::new();
+    let mut seek_location = 0; // TODO what happens when the file is really big?
+    loop {
+        let event = rx
+            .recv()
+            .with_context(|| format!("Error while watching {:?}", output_file_path))?;
+        if let notify::DebouncedEvent::Write(_) = event {
+            file.seek(std::io::SeekFrom::Start(seek_location))?;
+            let how_much_was_read = file.read_to_string(&mut buffer)?;
+            seek_location += how_much_was_read as u64;
+            print!("{}", buffer);
+            buffer.clear();
+        }
+    }
 }
 
 fn send_signal(run: &RunData, signal: signal::Signal) -> Result<()> {
@@ -193,7 +220,7 @@ fn main() -> Result<()> {
     match args {
         Args::Start { command, label } => start(&runs, command, label),
         Args::List => list(&runs),
-        Args::OpenRun { run, interactable } => open(&runs.get_run(&run)?.get_data()?, interactable),
+        Args::OpenRun { run, interactable } => open(&runs.get_run(&run)?, interactable),
         Args::InterruptRun { run } => {
             send_signal(&runs.get_run(&run)?.get_data()?, signal::Signal::SIGINT)
         }
