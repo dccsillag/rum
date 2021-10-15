@@ -24,23 +24,26 @@ pub struct RunData {
     pub command: Vec<String>,
     pub start_datetime: DateTime<Utc>,
 
-    pub done_data: Option<RunDoneData>,
+    pub state: RunDataState,
+}
 
-    #[serde(with = "serde_nix_pid")]
-    pub pid: Pid,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RunDataState {
+    Running {
+        #[serde(with = "serde_nix_pid")]
+        pid: Pid,
+    },
+    Done {
+        end_datetime: DateTime<Utc>,
+        #[serde(with = "serde_exitstatus")]
+        exit_code: ExitStatus,
+    },
 }
 
 #[derive(Debug, Clone)]
 pub struct Run {
     pub id: RunId,
     pub run_directory: PathBuf,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RunDoneData {
-    pub end_datetime: DateTime<Utc>,
-    #[serde(with = "serde_exitstatus")]
-    pub exit_code: ExitStatus,
 }
 
 pub struct Runs {
@@ -153,20 +156,21 @@ impl Run {
         self.set_data(&RunData {
             command: command,
             label: label,
-            done_data: None,
             start_datetime: Utc::now(),
 
-            pid: Pid::from_raw(process.id().try_into().unwrap()),
+            state: RunDataState::Running {
+                pid: Pid::from_raw(process.id().try_into().unwrap()),
+            },
         })?;
 
         let exit_status = process.wait()?;
 
         self.update_data(|run_data| {
             Ok(RunData {
-                done_data: Some(RunDoneData {
+                state: RunDataState::Done {
                     exit_code: exit_status,
                     end_datetime: Utc::now(),
-                }),
+                },
                 ..run_data
             })
         })?;
@@ -249,8 +253,12 @@ impl Run {
     }
 
     pub fn send_signal(&self, signal: signal::Signal) -> Result<()> {
-        signal::kill(self.get_data()?.pid, signal)
-            .with_context(|| "Couldn't send signal to run's process")
+        match self.get_data()?.state {
+            RunDataState::Running { pid } => {
+                signal::kill(pid, signal).with_context(|| "Couldn't send signal to run's process")
+            }
+            RunDataState::Done { .. } => Err(Error::msg(format!("Still running: {}", self.id))),
+        }
     }
 }
 

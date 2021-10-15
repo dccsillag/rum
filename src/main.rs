@@ -3,11 +3,11 @@ pub mod runs;
 use anyhow::{Context, Error, Result};
 use chrono::{DateTime, Utc};
 use fork::{daemon, Fork};
-use nix::{sys::signal};
+use nix::sys::signal;
 use structopt::StructOpt;
 use tabled::{Table, Tabled};
 
-use runs::{Run, RunData, RunDoneData, RunId, Runs};
+use runs::{Run, RunData, RunDataState, RunId, Runs};
 
 #[derive(StructOpt)]
 #[structopt(name = "rum", about = "A tool to manage running jobs.")]
@@ -117,19 +117,21 @@ fn list(runs: &Runs) -> Result<()> {
                     label,
                     command,
                     start_datetime,
-                    done_data,
-                    pid: _pid,
+                    state,
                 },
-            )| match done_data {
-                Some(done_data) => Row {
+            )| match state {
+                RunDataState::Done {
+                    exit_code,
+                    end_datetime,
+                } => Row {
                     id: run_id,
                     label,
                     status: "done".to_string(), // TODO check exit code
                     command: shell_words::join(command),
-                    end_datetime: Some(done_data.end_datetime),
+                    end_datetime: Some(end_datetime),
                     start_datetime,
                 },
-                None => Row {
+                RunDataState::Running { pid: _pid } => Row {
                     id: run_id,
                     label,
                     status: "running".to_string(),
@@ -154,12 +156,11 @@ fn delete(runs: &Runs, run: Run) -> Result<()> {
             label,
             command,
             start_datetime,
-            done_data:
-                Some(RunDoneData {
+            state:
+                RunDataState::Done {
                     end_datetime,
                     exit_code,
-                }),
-            pid: _pid,
+                },
         } => {
             label.map(|l| println!("Label: {}", l));
             println!("Command: {}", shell_words::join(command));
@@ -177,7 +178,8 @@ fn delete(runs: &Runs, run: Run) -> Result<()> {
             Ok(())
         }
         RunData {
-            done_data: None, ..
+            state: RunDataState::Running { .. },
+            ..
         } => Err(Error::msg(format!("Still running: {}", run.id))),
     }
 }
