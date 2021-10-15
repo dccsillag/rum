@@ -4,7 +4,6 @@ use std::{
     io::{Read, Seek, Write},
     os::unix::prelude::{AsRawFd, FromRawFd},
     path::PathBuf,
-    process::ExitStatus,
     sync::mpsc::channel,
 };
 
@@ -35,8 +34,7 @@ pub enum RunDataState {
     },
     Done {
         end_datetime: DateTime<Utc>,
-        #[serde(with = "serde_exitstatus")]
-        exit_code: ExitStatus,
+        exit_code: i32,
     },
 }
 
@@ -168,7 +166,7 @@ impl Run {
         self.update_data(|run_data| {
             Ok(RunData {
                 state: RunDataState::Done {
-                    exit_code: exit_status,
+                    exit_code: exit_status.code().unwrap_or(-1),
                     end_datetime: Utc::now(),
                 },
                 ..run_data
@@ -278,24 +276,5 @@ mod serde_nix_pid {
         D: Deserializer<'de>,
     {
         Ok(Pid::from_raw(i32::deserialize(deserializer)?))
-    }
-}
-
-mod serde_exitstatus {
-    use serde::{Deserialize, Deserializer, Serializer};
-    use std::{os::unix::prelude::ExitStatusExt, process::ExitStatus};
-
-    pub fn serialize<S>(exit_status: &ExitStatus, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_i32(exit_status.code().unwrap_or(-1).into())
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<ExitStatus, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Ok(ExitStatus::from_raw(i32::deserialize(deserializer)?))
     }
 }

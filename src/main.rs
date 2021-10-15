@@ -166,7 +166,7 @@ fn delete(runs: &Runs, run: Run) -> Result<()> {
             println!("Command: {}", shell_words::join(command));
             println!("Started running: {}", start_datetime);
             println!("Finished running: {}", end_datetime);
-            println!("Exit code: {}", exit_code.code().unwrap_or(-1));
+            println!("Exit code: {}", exit_code);
 
             if dialoguer::Confirm::with_theme(&dialoguer::theme::ColorfulTheme::default())
                 .with_prompt("Are you sure you want to delete this run?")
