@@ -89,6 +89,11 @@ impl Runs {
             id,
         })
     }
+
+    pub fn remove_run(&self, run: Run) -> Result<()> {
+        std::fs::remove_dir_all(run.run_directory)?;
+        Ok(())
+    }
 }
 
 impl Run {
@@ -146,8 +151,8 @@ mod serde_nix_pid {
 }
 
 mod serde_exitstatus {
-    use std::{os::unix::prelude::ExitStatusExt, process::ExitStatus};
     use serde::{Deserialize, Deserializer, Serializer};
+    use std::{os::unix::prelude::ExitStatusExt, process::ExitStatus};
 
     pub fn serialize<S>(exit_status: &ExitStatus, serializer: S) -> Result<S::Ok, S::Error>
     where

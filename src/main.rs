@@ -44,6 +44,12 @@ enum Args {
         interactable: bool,
     },
 
+    /// Delete a run
+    DeleteRun {
+        /// Which run to delete
+        run: RunId,
+    },
+
     /// Interrupt (Ctrl+C) a running run
     InterruptRun {
         /// Which run to open
@@ -257,6 +263,37 @@ fn open(run: &Run, interactable: bool) -> Result<()> {
     Ok(())
 }
 
+fn delete(runs: &Runs, run: Run) -> Result<()> {
+    match run.get_data()? {
+        RunData {
+            label,
+            command,
+            start_datetime,
+            done_data: Some(RunDoneData { end_datetime, exit_code }),
+            pid: _pid,
+            output_file: _output_file,
+        } => {
+            label.map(|l| println!("Label: {}", l));
+            println!("Command: {}", shell_words::join(command));
+            println!("Started running: {}", start_datetime);
+            println!("Finished running: {}", end_datetime);
+            println!("Exit code: {}", exit_code.code().unwrap_or(-1));
+
+            if dialoguer::Confirm::with_theme(&dialoguer::theme::ColorfulTheme::default())
+                .with_prompt("Are you sure you want to delete this run?")
+                .interact()?
+            {
+                runs.remove_run(run)?;
+                println!("Deleted.");
+            }
+            Ok(())
+        }
+        RunData {
+            done_data: None, ..
+        } => Err(Error::msg(format!("Still running: {}", run.id))),
+    }
+}
+
 fn send_signal(run: &RunData, signal: signal::Signal) -> Result<()> {
     signal::kill(run.pid, signal).with_context(|| "Couldn't send signal to run's process")
 }
@@ -270,6 +307,7 @@ fn main() -> Result<()> {
         Args::Start { command, label } => start(&runs, command, label),
         Args::List => list(&runs),
         Args::OpenRun { run, interactable } => open(&runs.get_run(&run)?, interactable),
+        Args::DeleteRun { run } => delete(&runs, runs.get_run(&run)?),
         Args::InterruptRun { run } => {
             send_signal(&runs.get_run(&run)?.get_data()?, signal::Signal::SIGINT)
         }
