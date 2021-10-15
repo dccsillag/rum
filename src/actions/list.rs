@@ -7,7 +7,7 @@ pub fn list_runs(runs: &Runs) -> Result<()> {
     let mut runs = runs
         .get_all()?
         .iter()
-        .filter_map(|(i, r)| r.get_data().map(|d| (i.clone(), d)).ok())
+        .filter_map(|r| r.get_data().map(|d| (r.id.clone(), d)).ok())
         .collect::<Vec<(RunId, RunData)>>();
     runs.sort_by_key(|(_, r)| r.start_datetime);
     runs.sort_by_key(|(_, r)| match r.state {

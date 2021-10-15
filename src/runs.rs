@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     convert::TryInto,
     os::unix::prelude::{AsRawFd, FromRawFd},
     path::PathBuf,
@@ -63,30 +62,43 @@ impl Runs {
         })
     }
 
-    pub fn get_run(&self, id: &RunId) -> Result<Run> {
-        Ok(Run {
-            id: id.clone(),
-            run_directory: self.run_directory.join(id),
-        })
-    }
-
-    pub fn get_all(&self) -> Result<HashMap<RunId, Run>> {
-        let mut out = HashMap::new();
-
-        for run_file in self
+    fn run_paths_iter(&self) -> Result<impl Iterator<Item = (RunId, PathBuf)>> {
+        Ok(self
             .run_directory
             .read_dir()
             .with_context(|| "Could not open data directory")?
             .filter_map(|x| x.ok())
-            .map(|x| x.path())
-        {
-            // TODO: errors in this block should be turned into warnings, not fatal errors.
-            let run_id = run_file.file_name().unwrap().to_str().unwrap().to_string();
-            let run = self.get_run(&run_id)?;
-            out.insert(run_id, run);
-        }
+            .map(|x| (x.file_name().to_str().unwrap().to_string(), x.path())))
+    }
 
-        Ok(out)
+    pub fn get_run(&self, id: &RunId) -> Result<Run> {
+        let matching_ids = self
+            .run_paths_iter()?
+            .filter(|(run_id, _)| run_id.starts_with(id))
+            .map(|(run_id, run_path)| Run {
+                id: run_id,
+                run_directory: run_path,
+            })
+            .collect::<Vec<_>>();
+
+        match &matching_ids[..] {
+            [] => Err(Error::msg(format!("No matching ID for query '{}'", id))),
+            [run] => Ok(run.clone()),
+            _ => Err(Error::msg(format!(
+                "Multiple matching IDs for query '{}'",
+                id
+            ))),
+        }
+    }
+
+    pub fn get_all(&self) -> Result<Vec<Run>> {
+        Ok(self
+            .run_paths_iter()?
+            .map(|(run_id, run_path)| Run {
+                id: run_id,
+                run_directory: run_path,
+            })
+            .collect())
     }
 
     pub fn new_run(&self) -> Result<Run> {
