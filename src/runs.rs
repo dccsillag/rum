@@ -1,19 +1,19 @@
 use std::{
     collections::HashMap,
     convert::TryInto,
-    io::{Read, Seek, Write},
+    io::Write,
     os::unix::prelude::{AsRawFd, FromRawFd},
     path::PathBuf,
-    sync::mpsc::channel,
 };
 
 use anyhow::{Context, Error, Result};
 use chrono::{DateTime, Utc};
 use nix::{sys::signal, unistd::Pid};
-use notify::Watcher;
 use serde::{Deserialize, Serialize};
 use termion::{event::Key, input::TermRead, raw::IntoRawMode};
 use uuid::Uuid;
+
+use crate::utils::tail;
 
 pub type RunId = String;
 
@@ -179,75 +179,59 @@ impl Run {
     pub fn open(&self, interactable: bool) -> Result<()> {
         let output_file_path = self.get_output_file();
 
-        let (tx, rx) = channel();
-        let mut watcher: notify::RecommendedWatcher =
-            Watcher::new(tx, std::time::Duration::from_millis(50))?;
-        watcher.watch(&output_file_path, notify::RecursiveMode::NonRecursive)?;
-
         let mut screen =
             termion::screen::AlternateScreen::from(std::io::stdout()).into_raw_mode()?;
-        let mut input = std::io::stdin().keys();
+        let mut input = termion::async_stdin().keys();
 
-        let mut file = std::fs::File::open(&output_file_path)?;
-        let mut buffer = String::new();
-        let mut seek_location = 0; // TODO what happens when the file is really big?
+        tail::follow_tail(
+            &output_file_path,
+            |new_text: &str| -> Result<()> {
+                let new_text = new_text.replace('\n', "\r\n");
+                write!(screen, "{}", new_text)?;
 
-        let mut update_output = || -> Result<()> {
-            file.seek(std::io::SeekFrom::Start(seek_location))?;
-            let how_much_was_read = file.read_to_string(&mut buffer)?;
-            buffer = buffer.replace('\n', "\r\n");
-            seek_location += how_much_was_read as u64;
-            write!(screen, "{}", buffer)?;
-            buffer.clear();
+                // FIXME what if the output is already styled?
+                write!(
+                    screen,
+                    "{}{}{}{}",
+                    termion::cursor::Save,
+                    termion::cursor::Goto(1, 1),
+                    termion::clear::CurrentLine,
+                    termion::style::Faint,
+                )?;
+                write!(
+                    screen,
+                    "You are currently viewing a run. Press Ctrl+C to exit."
+                )?;
+                write!(
+                    screen,
+                    "{}",
+                    termion::cursor::Goto(
+                        termion::terminal_size()?.0 - (self.id.len() as u16) + 1,
+                        1
+                    ),
+                )?;
+                write!(screen, "{}", self.id)?;
+                write!(
+                    screen,
+                    "{}{}",
+                    termion::style::NoFaint,
+                    termion::cursor::Restore
+                )?;
 
-            // FIXME what if the output is already styled?
-            write!(
-                screen,
-                "{}{}{}{}",
-                termion::cursor::Save,
-                termion::cursor::Goto(1, 1),
-                termion::clear::CurrentLine,
-                termion::style::Faint,
-            )?;
-            write!(
-                screen,
-                "You are currently viewing a run. Press Ctrl+C to exit."
-            )?;
-            write!(
-                screen,
-                "{}",
-                termion::cursor::Goto(termion::terminal_size()?.0 - (self.id.len() as u16) + 1, 1),
-            )?;
-            write!(screen, "{}", self.id)?;
-            write!(
-                screen,
-                "{}{}",
-                termion::style::NoFaint,
-                termion::cursor::Restore
-            )?;
+                screen.flush()?;
 
-            screen.flush()?;
-
-            Ok(())
-        };
-
-        update_output()?;
-        'mainloop: loop {
-            match rx.try_recv() {
-                Ok(notify::DebouncedEvent::Write(_)) => update_output()?,
-                Ok(_) => (),
-                Err(_) => std::thread::sleep(std::time::Duration::from_millis(10)),
-            }
-
-            while let Some(key) = input.next() {
-                match key? {
-                    Key::Ctrl('c') => break 'mainloop,
-                    _ => (),
+                Ok(())
+            },
+            || {
+                while let Some(key) = input.next() {
+                    match key? {
+                        Key::Ctrl('c') => return Ok(true),
+                        _ => (),
+                    }
                 }
-            }
-        }
-
-        Ok(())
+                Ok(false)
+            },
+        )
     }
 
     pub fn send_signal(&self, signal: signal::Signal) -> Result<()> {
