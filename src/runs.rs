@@ -24,7 +24,8 @@ pub struct RunData {
 
 #[derive(Debug, Clone)]
 pub struct Run {
-    run_directory: PathBuf,
+    pub id: RunId,
+    pub run_directory: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,6 +58,7 @@ impl Runs {
 
     pub fn get_run(&self, id: &RunId) -> Result<Run> {
         Ok(Run {
+            id: id.clone(),
             run_directory: self.run_directory.join(id),
         })
     }
@@ -83,7 +85,8 @@ impl Runs {
     pub fn new_run(&self) -> Result<Run> {
         let id = Uuid::new_v4().to_string();
         Ok(Run {
-            run_directory: ensure_dir_exists(self.run_directory.join(id))?,
+            run_directory: ensure_dir_exists(self.run_directory.join(&id))?,
+            id,
         })
     }
 }

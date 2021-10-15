@@ -2,9 +2,9 @@ pub mod runs;
 
 use std::{
     convert::TryInto,
-    io::{Read, Seek},
+    io::{Read, Seek, Write},
     os::unix::prelude::{AsRawFd, FromRawFd},
-    sync::mpsc::channel,
+    sync::{atomic::AtomicBool, mpsc::channel, Arc},
     time::Duration,
 };
 
@@ -191,21 +191,71 @@ fn open(run: &Run, interactable: bool) -> Result<()> {
     let mut watcher: notify::RecommendedWatcher = Watcher::new(tx, Duration::from_millis(50))?;
     watcher.watch(&output_file_path, notify::RecursiveMode::NonRecursive)?;
 
+    let running = Arc::new(AtomicBool::new(true));
+    {
+        let r = running.clone();
+        ctrlc::set_handler(move || {
+            r.store(false, std::sync::atomic::Ordering::SeqCst);
+        })?;
+    }
+
+    let mut screen = termion::screen::AlternateScreen::from(std::io::stdout());
+
     let mut file = std::fs::File::open(&output_file_path)?;
     let mut buffer = String::new();
     let mut seek_location = 0; // TODO what happens when the file is really big?
-    loop {
-        let event = rx
-            .recv()
-            .with_context(|| format!("Error while watching {:?}", output_file_path))?;
-        if let notify::DebouncedEvent::Write(_) = event {
-            file.seek(std::io::SeekFrom::Start(seek_location))?;
-            let how_much_was_read = file.read_to_string(&mut buffer)?;
-            seek_location += how_much_was_read as u64;
-            print!("{}", buffer);
-            buffer.clear();
+
+    let mut update_output = || -> Result<()> {
+        file.seek(std::io::SeekFrom::Start(seek_location))?;
+        let how_much_was_read = file.read_to_string(&mut buffer)?;
+        seek_location += how_much_was_read as u64;
+        write!(screen, "{}", buffer)?;
+        buffer.clear();
+
+        // FIXME what if the output is already styled?
+        write!(
+            screen,
+            "{}{}{}{}",
+            termion::cursor::Save,
+            termion::cursor::Goto(1, 1),
+            termion::clear::CurrentLine,
+            termion::style::Faint,
+        )?;
+        write!(
+            screen,
+            "You are currently viewing a run. Press Ctrl+C to exit."
+        )?;
+        write!(
+            screen,
+            "{}",
+            termion::cursor::Goto(
+                termion::terminal_size()?.0 - (run.id.len() as u16) + 1,
+                1
+            ),
+        )?;
+        write!(screen, "{}", run.id)?;
+        write!(
+            screen,
+            "{}{}",
+            termion::style::NoFaint,
+            termion::cursor::Restore
+        )?;
+
+        screen.flush()?;
+
+        Ok(())
+    };
+
+    update_output()?;
+    while running.load(std::sync::atomic::Ordering::SeqCst) {
+        match rx.try_recv() {
+            Ok(notify::DebouncedEvent::Write(_)) => update_output()?,
+            Ok(_) => (),
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(10)),
         }
     }
+
+    Ok(())
 }
 
 fn send_signal(run: &RunData, signal: signal::Signal) -> Result<()> {
