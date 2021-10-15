@@ -32,9 +32,6 @@ enum Args {
     OpenRun {
         /// Which run to open
         run: RunId,
-
-        #[structopt(short = "i")]
-        interactable: bool,
     },
 
     /// Delete a run
@@ -182,7 +179,7 @@ fn delete(runs: &Runs, run: Run) -> Result<()> {
     }
 }
 
-fn open_run(run: &Run, interactable: bool) -> Result<()> {
+fn open_run(run: &Run) -> Result<()> {
     let output_file_path = run.get_output_file();
 
     let mut screen = termion::screen::AlternateScreen::from(std::io::stdout()).into_raw_mode()?;
@@ -253,7 +250,7 @@ fn main() -> Result<()> {
     match args {
         Args::Start { command, label } => start(&runs, command, label),
         Args::List => list_runs(&runs),
-        Args::OpenRun { run, interactable } => open_run(&runs.get_run(&run)?, interactable),
+        Args::OpenRun { run } => open_run(&runs.get_run(&run)?),
         Args::DeleteRun { run } => delete(&runs, runs.get_run(&run)?),
         Args::InterruptRun { run } => send_signal(&runs.get_run(&run)?, signal::Signal::SIGINT),
         Args::TerminateRun { run } => send_signal(&runs.get_run(&run)?, signal::Signal::SIGTERM),
