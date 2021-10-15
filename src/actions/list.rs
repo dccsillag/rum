@@ -1,6 +1,5 @@
 use anyhow::Result;
-use chrono::{DateTime, Utc};
-use tabled::{Table, Tabled};
+use termion::{color, style};
 
 use crate::runs::{RunData, RunDataState, RunId, Runs};
 
@@ -11,73 +10,65 @@ pub fn list_runs(runs: &Runs) -> Result<()> {
         .filter_map(|(i, r)| r.get_data().map(|d| (i.clone(), d)).ok())
         .collect::<Vec<(RunId, RunData)>>();
     runs.sort_by_key(|(_, r)| r.start_datetime);
+    runs.sort_by_key(|(_, r)| match r.state {
+        RunDataState::Running { .. } => 0,
+        RunDataState::Done { .. } => 1,
+    });
 
-    fn display_option<T>(o: &Option<T>) -> String
-    where
-        T: std::fmt::Display,
+    for (
+        run_id,
+        RunData {
+            label,
+            command,
+            start_datetime,
+            state,
+        },
+    ) in runs.into_iter()
     {
-        match o {
-            Some(s) => format!("{}", s),
-            None => "".to_string(),
+        print!("{} {}", &run_id[..8], style::Bold);
+        match state {
+            RunDataState::Done { exit_code: 0, .. } => {
+                print!("{}[done] ", color::Fg(color::Green))
+            }
+            RunDataState::Done { exit_code: -1, .. } => {
+                print!("{}[killed] ", color::Fg(color::Yellow))
+            }
+            RunDataState::Done { exit_code, .. } => {
+                print!("{}[failed:{}] ", color::Fg(color::Red), exit_code)
+            }
+            RunDataState::Running { .. } => {
+                print!("[running] ")
+            }
+        }
+        println!(
+            "{}{}{}",
+            color::Fg(color::Reset),
+            shell_words::join(command),
+            style::Reset
+        );
+        print!("         ");
+        match state {
+            RunDataState::Done { end_datetime, .. } => {
+                println!(
+                    "{}Started{} {}, {}Finished{} {}",
+                    style::Faint,
+                    style::Reset,
+                    start_datetime.format("%c"),
+                    style::Faint,
+                    style::Reset,
+                    end_datetime.format("%c")
+                )
+            }
+            RunDataState::Running { .. } => {
+                println!(
+                    "{}Started{} {}",
+                    style::Faint,
+                    style::Reset,
+                    start_datetime.format("%c")
+                );
+            }
         }
     }
-
-    #[derive(Tabled)]
-    struct Row {
-        #[header("ID")]
-        id: RunId,
-        #[header("Status")]
-        status: String,
-        #[header("Label")]
-        #[field(display_with = "display_option")]
-        label: Option<String>,
-        #[header("Command")]
-        command: String,
-        #[header("Start DateTime")]
-        start_datetime: DateTime<Utc>,
-        #[header("End DateTime")]
-        #[field(display_with = "display_option")]
-        end_datetime: Option<DateTime<Utc>>,
-    }
-
-    let rows = runs
-        .into_iter()
-        .map(
-            |(
-                run_id,
-                RunData {
-                    label,
-                    command,
-                    start_datetime,
-                    state,
-                },
-            )| match state {
-                RunDataState::Done {
-                    exit_code,
-                    end_datetime,
-                } => Row {
-                    id: run_id,
-                    label,
-                    status: format!("done (exit code = {})", exit_code),
-                    command: shell_words::join(command),
-                    end_datetime: Some(end_datetime),
-                    start_datetime,
-                },
-                RunDataState::Running { pid: _pid } => Row {
-                    id: run_id,
-                    label,
-                    status: "running".to_string(),
-                    command: shell_words::join(command),
-                    end_datetime: None,
-                    start_datetime,
-                },
-            },
-        )
-        .collect::<Vec<Row>>();
-
-    let table = Table::new(rows).with(tabled::Style::noborder());
-
-    print!("{}", table);
 
     Ok(())
 }
