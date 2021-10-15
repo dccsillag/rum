@@ -4,7 +4,7 @@ use std::{
     convert::TryInto,
     io::{Read, Seek, Write},
     os::unix::prelude::{AsRawFd, FromRawFd},
-    sync::{atomic::AtomicBool, mpsc::channel, Arc},
+    sync::mpsc::channel,
     time::Duration,
 };
 
@@ -17,6 +17,7 @@ use structopt::StructOpt;
 use tabled::{Table, Tabled};
 
 use runs::{Run, RunData, RunDoneData, RunId, Runs};
+use termion::{event::Key, input::TermRead, raw::IntoRawMode};
 
 #[derive(StructOpt)]
 #[structopt(name = "rum", about = "A tool to manage running jobs.")]
@@ -191,15 +192,8 @@ fn open(run: &Run, interactable: bool) -> Result<()> {
     let mut watcher: notify::RecommendedWatcher = Watcher::new(tx, Duration::from_millis(50))?;
     watcher.watch(&output_file_path, notify::RecursiveMode::NonRecursive)?;
 
-    let running = Arc::new(AtomicBool::new(true));
-    {
-        let r = running.clone();
-        ctrlc::set_handler(move || {
-            r.store(false, std::sync::atomic::Ordering::SeqCst);
-        })?;
-    }
-
-    let mut screen = termion::screen::AlternateScreen::from(std::io::stdout());
+    let mut screen = termion::screen::AlternateScreen::from(std::io::stdout()).into_raw_mode()?;
+    let mut input = std::io::stdin().keys();
 
     let mut file = std::fs::File::open(&output_file_path)?;
     let mut buffer = String::new();
@@ -208,6 +202,7 @@ fn open(run: &Run, interactable: bool) -> Result<()> {
     let mut update_output = || -> Result<()> {
         file.seek(std::io::SeekFrom::Start(seek_location))?;
         let how_much_was_read = file.read_to_string(&mut buffer)?;
+        buffer = buffer.replace('\n', "\r\n");
         seek_location += how_much_was_read as u64;
         write!(screen, "{}", buffer)?;
         buffer.clear();
@@ -228,10 +223,7 @@ fn open(run: &Run, interactable: bool) -> Result<()> {
         write!(
             screen,
             "{}",
-            termion::cursor::Goto(
-                termion::terminal_size()?.0 - (run.id.len() as u16) + 1,
-                1
-            ),
+            termion::cursor::Goto(termion::terminal_size()?.0 - (run.id.len() as u16) + 1, 1),
         )?;
         write!(screen, "{}", run.id)?;
         write!(
@@ -247,11 +239,18 @@ fn open(run: &Run, interactable: bool) -> Result<()> {
     };
 
     update_output()?;
-    while running.load(std::sync::atomic::Ordering::SeqCst) {
+    'mainloop: loop {
         match rx.try_recv() {
             Ok(notify::DebouncedEvent::Write(_)) => update_output()?,
             Ok(_) => (),
             Err(_) => std::thread::sleep(std::time::Duration::from_millis(10)),
+        }
+
+        while let Some(key) = input.next() {
+            match key? {
+                Key::Ctrl('c') => break 'mainloop,
+                _ => (),
+            }
         }
     }
 
