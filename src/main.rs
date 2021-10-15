@@ -121,7 +121,7 @@ fn list_runs(runs: &Runs) -> Result<()> {
                 } => Row {
                     id: run_id,
                     label,
-                    status: "done".to_string(), // TODO check exit code
+                    status: format!("done (exit code = {})", exit_code),
                     command: shell_words::join(command),
                     end_datetime: Some(end_datetime),
                     start_datetime,
