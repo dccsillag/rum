@@ -78,7 +78,7 @@ fn start(runs: &Runs, command: Vec<String>, label: Option<String>) -> Result<()>
         let run = runs.new_run()?;
 
         let output_file_path = run.get_output_file();
-        let output_file = std::fs::File::create(&output_file_path)?;
+        let output_file = std::fs::File::create(output_file_path)?;
         let output_file_raw = output_file.as_raw_fd();
 
         let mut process: std::process::Child = std::process::Command::new(command.first().unwrap())
@@ -95,7 +95,6 @@ fn start(runs: &Runs, command: Vec<String>, label: Option<String>) -> Result<()>
             start_datetime: Utc::now(),
 
             pid: Pid::from_raw(process.id().try_into().unwrap()),
-            output_file: output_file_path,
         })?;
 
         let exit_status = process.wait()?;
@@ -161,7 +160,6 @@ fn list(runs: &Runs) -> Result<()> {
                     start_datetime,
                     done_data,
                     pid: _pid,
-                    output_file: _output_file,
                 },
             )| match done_data {
                 Some(done_data) => Row {
@@ -271,7 +269,6 @@ fn delete(runs: &Runs, run: Run) -> Result<()> {
             start_datetime,
             done_data: Some(RunDoneData { end_datetime, exit_code }),
             pid: _pid,
-            output_file: _output_file,
         } => {
             label.map(|l| println!("Label: {}", l));
             println!("Command: {}", shell_words::join(command));

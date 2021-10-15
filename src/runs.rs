@@ -18,8 +18,6 @@ pub struct RunData {
 
     #[serde(with = "serde_nix_pid")]
     pub pid: Pid,
-
-    pub output_file: PathBuf,
 }
 
 #[derive(Debug, Clone)]
