@@ -1,19 +1,17 @@
 use std::{
     collections::HashMap,
     convert::TryInto,
-    io::Write,
     os::unix::prelude::{AsRawFd, FromRawFd},
     path::PathBuf,
 };
 
 use anyhow::{Context, Error, Result};
 use chrono::{DateTime, Utc};
-use nix::{sys::signal, unistd::Pid};
+use fork::{daemon, Fork};
+use nix::unistd::Pid;
 use serde::{Deserialize, Serialize};
-use termion::{event::Key, input::TermRead, raw::IntoRawMode};
-use uuid::Uuid;
 
-use crate::utils::tail;
+use uuid::Uuid;
 
 pub type RunId = String;
 
@@ -140,107 +138,47 @@ impl Run {
     }
 
     pub fn start(&self, command: Vec<String>, label: Option<String>) -> Result<()> {
-        let output_file_path = self.get_output_file();
-        let output_file = std::fs::File::create(output_file_path)?;
-        let output_file_raw = output_file.as_raw_fd();
+        assert!(!command.is_empty());
 
-        let mut process: std::process::Child = std::process::Command::new(command.first().unwrap())
-            .args(&command[1..])
-            .stdout(unsafe { std::process::Stdio::from_raw_fd(output_file_raw) })
-            .stderr(unsafe { std::process::Stdio::from_raw_fd(output_file_raw) })
-            .stdin(std::process::Stdio::null())
-            .spawn()?;
+        if let Fork::Child = daemon(true, false)
+            .map_err(|e| Error::msg(format!("Failed to fork: error code {}", e)))?
+        {
+            let output_file_path = self.get_output_file();
+            let output_file = std::fs::File::create(output_file_path)?;
+            let output_file_raw = output_file.as_raw_fd();
 
-        self.set_data(&RunData {
-            command: command,
-            label: label,
-            start_datetime: Utc::now(),
+            let mut process: std::process::Child =
+                std::process::Command::new(command.first().unwrap())
+                    .args(&command[1..])
+                    .stdout(unsafe { std::process::Stdio::from_raw_fd(output_file_raw) })
+                    .stderr(unsafe { std::process::Stdio::from_raw_fd(output_file_raw) })
+                    .stdin(std::process::Stdio::null())
+                    .spawn()?;
 
-            state: RunDataState::Running {
-                pid: Pid::from_raw(process.id().try_into().unwrap()),
-            },
-        })?;
+            self.set_data(&RunData {
+                command: command,
+                label: label,
+                start_datetime: Utc::now(),
 
-        let exit_status = process.wait()?;
-
-        self.update_data(|run_data| {
-            Ok(RunData {
-                state: RunDataState::Done {
-                    exit_code: exit_status.code().unwrap_or(-1),
-                    end_datetime: Utc::now(),
+                state: RunDataState::Running {
+                    pid: Pid::from_raw(process.id().try_into().unwrap()),
                 },
-                ..run_data
-            })
-        })?;
+            })?;
+
+            let exit_status = process.wait()?;
+
+            self.update_data(|run_data| {
+                Ok(RunData {
+                    state: RunDataState::Done {
+                        exit_code: exit_status.code().unwrap_or(-1),
+                        end_datetime: Utc::now(),
+                    },
+                    ..run_data
+                })
+            })?;
+        }
 
         Ok(())
-    }
-
-    pub fn open(&self, interactable: bool) -> Result<()> {
-        let output_file_path = self.get_output_file();
-
-        let mut screen =
-            termion::screen::AlternateScreen::from(std::io::stdout()).into_raw_mode()?;
-        let mut input = termion::async_stdin().keys();
-
-        tail::follow_tail(
-            &output_file_path,
-            |new_text: &str| -> Result<()> {
-                let new_text = new_text.replace('\n', "\r\n");
-                write!(screen, "{}", new_text)?;
-
-                // FIXME what if the output is already styled?
-                write!(
-                    screen,
-                    "{}{}{}{}",
-                    termion::cursor::Save,
-                    termion::cursor::Goto(1, 1),
-                    termion::clear::CurrentLine,
-                    termion::style::Faint,
-                )?;
-                write!(
-                    screen,
-                    "You are currently viewing a run. Press Ctrl+C to exit."
-                )?;
-                write!(
-                    screen,
-                    "{}",
-                    termion::cursor::Goto(
-                        termion::terminal_size()?.0 - (self.id.len() as u16) + 1,
-                        1
-                    ),
-                )?;
-                write!(screen, "{}", self.id)?;
-                write!(
-                    screen,
-                    "{}{}",
-                    termion::style::NoFaint,
-                    termion::cursor::Restore
-                )?;
-
-                screen.flush()?;
-
-                Ok(())
-            },
-            || {
-                while let Some(key) = input.next() {
-                    match key? {
-                        Key::Ctrl('c') => return Ok(true),
-                        _ => (),
-                    }
-                }
-                Ok(false)
-            },
-        )
-    }
-
-    pub fn send_signal(&self, signal: signal::Signal) -> Result<()> {
-        match self.get_data()?.state {
-            RunDataState::Running { pid } => {
-                signal::kill(pid, signal).with_context(|| "Couldn't send signal to run's process")
-            }
-            RunDataState::Done { .. } => Err(Error::msg(format!("Still running: {}", self.id))),
-        }
     }
 }
 

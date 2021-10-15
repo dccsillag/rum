@@ -1,14 +1,16 @@
-pub mod utils;
 pub mod runs;
+pub mod utils;
+
+use std::io::Write;
 
 use anyhow::{Context, Error, Result};
 use chrono::{DateTime, Utc};
-use fork::{daemon, Fork};
 use nix::sys::signal;
 use structopt::StructOpt;
 use tabled::{Table, Tabled};
 
 use runs::{Run, RunData, RunDataState, RunId, Runs};
+use termion::{event::Key, input::TermRead, raw::IntoRawMode};
 
 #[derive(StructOpt)]
 #[structopt(name = "rum", about = "A tool to manage running jobs.")]
@@ -65,15 +67,10 @@ fn start(runs: &Runs, command: Vec<String>, label: Option<String>) -> Result<()>
         return Err(Error::msg("Given command is empty"));
     }
 
-    if let Ok(Fork::Child) = daemon(true, false) {
-        let run = runs.new_run()?;
-        run.start(command, label)?;
-    }
-
-    Ok(())
+    runs.new_run()?.start(command, label)
 }
 
-fn list(runs: &Runs) -> Result<()> {
+fn list_runs(runs: &Runs) -> Result<()> {
     let mut runs = runs
         .get_all()?
         .iter()
@@ -185,6 +182,69 @@ fn delete(runs: &Runs, run: Run) -> Result<()> {
     }
 }
 
+fn open_run(run: &Run, interactable: bool) -> Result<()> {
+    let output_file_path = run.get_output_file();
+
+    let mut screen = termion::screen::AlternateScreen::from(std::io::stdout()).into_raw_mode()?;
+    let mut input = termion::async_stdin().keys();
+
+    utils::tail::follow_tail(
+        &output_file_path,
+        |new_text: &str| -> Result<()> {
+            let new_text = new_text.replace('\n', "\r\n");
+            write!(screen, "{}", new_text)?;
+
+            // FIXME what if the output is already styled?
+            write!(
+                screen,
+                "{}{}{}{}",
+                termion::cursor::Save,
+                termion::cursor::Goto(1, 1),
+                termion::clear::CurrentLine,
+                termion::style::Faint,
+            )?;
+            write!(
+                screen,
+                "You are currently viewing a run. Press Ctrl+C to exit."
+            )?;
+            write!(
+                screen,
+                "{}",
+                termion::cursor::Goto(termion::terminal_size()?.0 - (run.id.len() as u16) + 1, 1),
+            )?;
+            write!(screen, "{}", run.id)?;
+            write!(
+                screen,
+                "{}{}",
+                termion::style::NoFaint,
+                termion::cursor::Restore
+            )?;
+
+            screen.flush()?;
+
+            Ok(())
+        },
+        || {
+            while let Some(key) = input.next() {
+                match key? {
+                    Key::Ctrl('c') => return Ok(true),
+                    _ => (),
+                }
+            }
+            Ok(false)
+        },
+    )
+}
+
+pub fn send_signal(run: &Run, signal: signal::Signal) -> Result<()> {
+    match run.get_data()?.state {
+        RunDataState::Running { pid } => {
+            signal::kill(pid, signal).with_context(|| "Couldn't send signal to run's process")
+        }
+        RunDataState::Done { .. } => Err(Error::msg(format!("Still running: {}", run.id))),
+    }
+}
+
 fn main() -> Result<()> {
     let args = Args::from_args();
 
@@ -192,11 +252,11 @@ fn main() -> Result<()> {
 
     match args {
         Args::Start { command, label } => start(&runs, command, label),
-        Args::List => list(&runs),
-        Args::OpenRun { run, interactable } => runs.get_run(&run)?.open(interactable),
+        Args::List => list_runs(&runs),
+        Args::OpenRun { run, interactable } => open_run(&runs.get_run(&run)?, interactable),
         Args::DeleteRun { run } => delete(&runs, runs.get_run(&run)?),
-        Args::InterruptRun { run } => runs.get_run(&run)?.send_signal(signal::Signal::SIGINT),
-        Args::TerminateRun { run } => runs.get_run(&run)?.send_signal(signal::Signal::SIGTERM),
-        Args::KillRun { run } => runs.get_run(&run)?.send_signal(signal::Signal::SIGKILL),
+        Args::InterruptRun { run } => send_signal(&runs.get_run(&run)?, signal::Signal::SIGINT),
+        Args::TerminateRun { run } => send_signal(&runs.get_run(&run)?, signal::Signal::SIGTERM),
+        Args::KillRun { run } => send_signal(&runs.get_run(&run)?, signal::Signal::SIGKILL),
     }
 }
