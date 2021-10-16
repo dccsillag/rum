@@ -236,8 +236,8 @@ impl Run {
                         Ok(())
                     }
                     Err(e) => {
-                        // TODO delete this run's directory
                         sender.send(Message::Err(e.clone()))?;
+                        std::fs::remove_dir_all(&self.run_directory)?;
                         Err(Error::from(e))
                     }
                 }
