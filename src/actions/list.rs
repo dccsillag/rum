@@ -1,7 +1,10 @@
 use anyhow::Result;
 use termion::{color, style};
 
-use crate::runs::{RunData, RunDataState, RunId, Runs};
+use crate::{
+    runs::{RunData, RunDataState, RunId, Runs},
+    utils::format_datetime,
+};
 
 pub fn list_runs(runs: &Runs) -> Result<()> {
     let mut runs = runs
@@ -53,10 +56,10 @@ pub fn list_runs(runs: &Runs) -> Result<()> {
                     "{}Started{} {}, {}Finished{} {}",
                     style::Faint,
                     style::Reset,
-                    start_datetime.format("%c"),
+                    format_datetime(start_datetime),
                     style::Faint,
                     style::Reset,
-                    end_datetime.format("%c")
+                    format_datetime(end_datetime),
                 )
             }
             RunDataState::Running { .. } => {
@@ -64,7 +67,7 @@ pub fn list_runs(runs: &Runs) -> Result<()> {
                     "{}Started{} {}",
                     style::Faint,
                     style::Reset,
-                    start_datetime.format("%c")
+                    format_datetime(start_datetime),
                 );
             }
         }

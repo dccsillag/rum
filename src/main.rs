@@ -27,6 +27,13 @@ fn main() -> Result<()> {
                 .about("List runs"),
         )
         .subcommand(
+            App::new("info")
+                .short_flag('i')
+                .long_flag("info")
+                .about("Show information about a run")
+                .arg(Arg::new("run").about("Which run to show information on")),
+        )
+        .subcommand(
             App::new("view")
                 .short_flag('v')
                 .long_flag("view")
@@ -42,7 +49,7 @@ fn main() -> Result<()> {
         )
         .subcommand(
             App::new("interrupt")
-                .short_flag('i')
+                .short_flag('c')
                 .long_flag("interrupt")
                 .about("Interrupt (SIGINT, Ctrl+C) a run")
                 .arg(Arg::new("run").about("Which run to interrupt")),
@@ -72,6 +79,9 @@ fn main() -> Result<()> {
             /*TODO label*/ None,
         ),
         Some(("list", _)) => actions::list::list_runs(&runs),
+        Some(("info", submatches)) => {
+            actions::show_info::show_run_info(&runs.get_run(&submatches.value_of_t_or_exit("run"))?)
+        }
         Some(("view", submatches)) => {
             actions::open::open_run(&runs.get_run(&submatches.value_of_t_or_exit("run"))?)
         }

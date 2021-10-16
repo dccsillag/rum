@@ -12,6 +12,13 @@ pub fn open_run(run: &Run) -> Result<()> {
     let mut screen = termion::screen::AlternateScreen::from(std::io::stdout()).into_raw_mode()?;
     let mut input = termion::async_stdin().keys();
 
+    write!(
+        screen,
+        "{}{}",
+        termion::clear::All,
+        termion::cursor::Goto(1, 2)
+    )?;
+
     tail::follow_tail(
         &output_file_path,
         |new_text: &str| -> Result<()> {
