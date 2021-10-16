@@ -2,21 +2,38 @@ use anyhow::Result;
 use termion::{color, style};
 
 use crate::{
-    runs::{RunData, RunDataState, RunId, Runs},
+    runs::{RunData, RunDataState, Runs},
     utils::format_datetime,
 };
 
 pub fn list_runs(runs: &Runs) -> Result<()> {
-    let mut runs = runs
+    let (runs, bad_runs): (Vec<_>, Vec<_>) = runs
         .get_all()?
         .iter()
-        .filter_map(|r| r.get_data().map(|d| (r.id.clone(), d)).ok())
-        .collect::<Vec<(RunId, RunData)>>();
+        .map(|r| r.get_data().map(|d| (r.id.clone(), d)).map_err(|_| r.id.clone()))
+        .partition(Result::is_ok);
+    let mut runs = runs.into_iter().map(Result::unwrap).collect::<Vec<_>>();
+    let bad_runs = bad_runs
+        .into_iter()
+        .map(Result::unwrap_err)
+        .collect::<Vec<_>>();
     runs.sort_by_key(|(_, r)| r.start_datetime);
     runs.sort_by_key(|(_, r)| match r.state {
         RunDataState::Running { .. } => 0,
         RunDataState::Done { .. } => 1,
     });
+
+    for bad_run in bad_runs.into_iter() {
+        // TODO change into logging
+        println!(
+            "{}{}WARNING{}{}: Could not read run '{}'; ignoring it.",
+            style::Bold,
+            color::Fg(color::Yellow),
+            color::Fg(color::Reset),
+            style::Reset,
+            bad_run,
+        );
+    }
 
     for (
         run_id,
