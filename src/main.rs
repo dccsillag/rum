@@ -3,103 +3,91 @@ pub mod runs;
 pub mod utils;
 
 use anyhow::{Context, Result};
-use clap::{crate_name, crate_version, App, AppSettings, Arg};
+use clap::{crate_name, crate_version, Clap};
 use nix::sys::signal;
 
 use runs::Runs;
 
+#[derive(Clap)]
+#[clap(about = "A tool to manage running jobs.", name = crate_name!(), version = crate_version!())]
+struct Args {
+    #[clap(subcommand)]
+    subcommand: Subcommand,
+}
+
+#[derive(Clap)]
+enum Subcommand {
+    /// List runs
+    #[clap(name = "-list", short_flag = 'l', long_flag = "list")]
+    List,
+
+    /// Show information about a run
+    #[clap(name = "-info", short_flag = 'i', long_flag = "info")]
+    Info {
+        /// Which run to show information on
+        run: String,
+    },
+
+    /// View a run
+    #[clap(name = "-view", short_flag = 'v', long_flag = "view")]
+    View {
+        /// Which run to view
+        run: String,
+    },
+
+    /// Remove a run
+    #[clap(name = "-remove", short_flag = 'r', long_flag = "remove")]
+    Remove {
+        /// Which run to remove
+        run: String,
+    },
+
+    /// Interrupt (SIGINT, i.e., Ctrl+C) a run
+    #[clap(name = "-interrupt", short_flag = 'c', long_flag = "interrupt")]
+    Interrupt {
+        /// Which run to interrupt
+        run: String,
+    },
+
+    /// Terminate (SIGTERM, i.e., kill <PID>) a run
+    #[clap(name = "-terminate", short_flag = 't', long_flag = "terminate")]
+    Terminate {
+        /// Which run to terminate
+        run: String,
+    },
+
+    /// Kill (SIGKILL, i.e., kill -9 <PID>) a run
+    #[clap(name = "-kill", short_flag = 'K', long_flag = "kill")]
+    Kill {
+        /// Which run to kill
+        run: String,
+    },
+
+    #[clap(external_subcommand)]
+    Start(Vec<String>),
+}
+
 fn main() -> Result<()> {
-    let matches = App::new(crate_name!())
-        .about("A tool to manage running jobs.")
-        .version(crate_version!())
-        .setting(AppSettings::SubcommandRequiredElseHelp)
-        .setting(AppSettings::AllowExternalSubcommands)
-        .subcommand_placeholder("ACTION", "ACTIONS")
-        .subcommand(
-            App::new("-list")
-                .short_flag('l')
-                .long_flag("list")
-                .about("List runs"),
-        )
-        .subcommand(
-            App::new("-info")
-                .short_flag('i')
-                .long_flag("info")
-                .about("Show information about a run")
-                .arg(Arg::new("run").about("Which run to show information on")),
-        )
-        .subcommand(
-            App::new("-view")
-                .short_flag('v')
-                .long_flag("view")
-                .about("View a run")
-                .arg(Arg::new("run").about("Which run to view")),
-        )
-        .subcommand(
-            App::new("-remove")
-                .short_flag('r')
-                .long_flag("remove")
-                .about("Remove a run")
-                .arg(Arg::new("run").about("Which run to remove")),
-        )
-        .subcommand(
-            App::new("-interrupt")
-                .short_flag('c')
-                .long_flag("interrupt")
-                .about("Interrupt (SIGINT, Ctrl+C) a run")
-                .arg(Arg::new("run").about("Which run to interrupt")),
-        )
-        .subcommand(
-            App::new("-terminate")
-                .short_flag('t')
-                .long_flag("terminate")
-                .about("Terminate (SIGTERM) a run")
-                .arg(Arg::new("run").about("Which run to terminate")),
-        )
-        .subcommand(
-            App::new("-kill")
-                .short_flag('K')
-                .long_flag("kill9")
-                .about("Kill (SIGKILL, kill -9) a run")
-                .arg(Arg::new("run").about("Which run to kill")),
-        )
-        .get_matches();
+    let args = Args::parse();
 
     let runs = Runs::new().with_context(|| "Could not acquire runs")?;
 
-    match matches.subcommand() {
-        Some(("-list", _)) => actions::list::list_runs(&runs),
-        Some(("-info", submatches)) => {
-            actions::show_info::show_run_info(&runs.get_run(&submatches.value_of_t_or_exit("run"))?)
-        }
-        Some(("-view", submatches)) => {
-            actions::open::open_run(&runs.get_run(&submatches.value_of_t_or_exit("run"))?)
-        }
-        Some(("-remove", submatches)) => {
-            actions::remove::remove_run(&runs, runs.get_run(&submatches.value_of_t_or_exit("run"))?)
-        }
-        Some(("-interrupt", submatches)) => actions::send_signal::send_signal(
-            &runs.get_run(&submatches.value_of_t_or_exit("run"))?,
-            signal::Signal::SIGINT,
-        ),
-        Some(("-terminate", submatches)) => actions::send_signal::send_signal(
-            &runs.get_run(&submatches.value_of_t_or_exit("run"))?,
-            signal::Signal::SIGTERM,
-        ),
-        Some(("-kill", submatches)) => actions::send_signal::send_signal(
-            &runs.get_run(&submatches.value_of_t_or_exit("run"))?,
-            signal::Signal::SIGKILL,
-        ),
-        Some((argv0, submatches)) => {
-            let command = match submatches.values_of("") {
-                Some(s) => std::iter::once(argv0)
-                    .chain(s)
-                    .map(|s| s.to_string())
-                    .collect(),
-                None => std::iter::once(argv0).map(|s| s.to_string()).collect(),
-            };
+    match args.subcommand {
+        Subcommand::Start(command) => {
             actions::start::start_run(&runs, command, /*TODO label*/ None)
         }
-        _ => unreachable!(),
+        Subcommand::List => actions::list::list_runs(&runs),
+        Subcommand::Info { run } => actions::show_info::show_run_info(&runs.get_run(&run)?),
+        Subcommand::View { run } => actions::open::open_run(&runs.get_run(&run)?),
+        Subcommand::Remove { run } => actions::remove::remove_run(&runs, runs.get_run(&run)?),
+        Subcommand::Interrupt { run } => {
+            actions::send_signal::send_signal(&runs.get_run(&run)?, signal::Signal::SIGINT)
+        }
+        Subcommand::Terminate { run } => {
+            actions::send_signal::send_signal(&runs.get_run(&run)?, signal::Signal::SIGTERM)
+        }
+        Subcommand::Kill { run } => {
+            actions::send_signal::send_signal(&runs.get_run(&run)?, signal::Signal::SIGKILL)
+        }
     }
 }
