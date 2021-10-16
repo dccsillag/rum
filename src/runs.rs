@@ -2,14 +2,16 @@ use std::{
     convert::TryInto,
     os::unix::prelude::{AsRawFd, FromRawFd},
     path::PathBuf,
+    process::Child,
 };
 
 use anyhow::{Context, Error, Result};
 use chrono::{DateTime, Utc};
-use fork::{daemon, Fork};
+use clap::crate_name;
+use fork::{fork, close_fd, Fork};
 use nix::unistd::Pid;
 use serde::{Deserialize, Serialize};
-use clap::crate_name;
+use thiserror::Error;
 
 use uuid::Uuid;
 
@@ -116,6 +118,18 @@ impl Runs {
     }
 }
 
+#[derive(Serialize, Deserialize, Error, Debug, Clone)]
+enum ForkedError {
+    #[error("couldn't create output file: {message}")]
+    CouldntCreateOutputFile { message: String },
+    #[error("couldn't save run data: {message}")]
+    CouldntSetData { message: String },
+    #[error("failed to spawn process: {command}: {message}")]
+    FailedToSpawn { command: String, message: String },
+    #[error("failed to wait for process to exit: {message}")]
+    FailedToWaitForProcess { message: String },
+}
+
 impl Run {
     fn get_data_file(&self) -> PathBuf {
         self.run_directory.join("data.json")
@@ -150,48 +164,97 @@ impl Run {
         Ok(())
     }
 
+    fn spawn_process(
+        &self,
+        command: Vec<String>,
+        label: Option<String>,
+    ) -> std::result::Result<Child, ForkedError> {
+        let output_file_path = self.get_output_file();
+        let output_file = std::fs::File::create(output_file_path).map_err(|e| {
+            ForkedError::CouldntCreateOutputFile {
+                message: e.to_string(),
+            }
+        })?;
+        let output_file_raw = output_file.as_raw_fd();
+
+        let process = std::process::Command::new(command.first().unwrap())
+            .args(&command[1..])
+            .stdout(unsafe { std::process::Stdio::from_raw_fd(output_file_raw) })
+            .stderr(unsafe { std::process::Stdio::from_raw_fd(output_file_raw) })
+            .stdin(std::process::Stdio::null())
+            .spawn()
+            .map_err(|e| ForkedError::FailedToSpawn {
+                command: command.first().unwrap().to_string(),
+                message: e.to_string(),
+            })?;
+
+        self.set_data(&RunData {
+            command: command,
+            label: label,
+            start_datetime: Utc::now(),
+
+            state: RunDataState::Running {
+                pid: Pid::from_raw(process.id().try_into().unwrap()),
+            },
+        })
+        .map_err(|e| ForkedError::CouldntSetData {
+            message: e.to_string(),
+        })?;
+
+        Ok(process)
+    }
+
     pub fn start(&self, command: Vec<String>, label: Option<String>) -> Result<()> {
         assert!(!command.is_empty());
 
-        if let Fork::Child = daemon(true, false)
-            .map_err(|e| Error::msg(format!("Failed to fork: error code {}", e)))?
-        {
-            let output_file_path = self.get_output_file();
-            let output_file = std::fs::File::create(output_file_path)?;
-            let output_file_raw = output_file.as_raw_fd();
+        let (sender, receiver) = ipc_channel::ipc::channel::<Message>()?;
 
-            let mut process: std::process::Child =
-                std::process::Command::new(command.first().unwrap())
-                    .args(&command[1..])
-                    .stdout(unsafe { std::process::Stdio::from_raw_fd(output_file_raw) })
-                    .stderr(unsafe { std::process::Stdio::from_raw_fd(output_file_raw) })
-                    .stdin(std::process::Stdio::null())
-                    .spawn()?;
-
-            self.set_data(&RunData {
-                command: command,
-                label: label,
-                start_datetime: Utc::now(),
-
-                state: RunDataState::Running {
-                    pid: Pid::from_raw(process.id().try_into().unwrap()),
-                },
-            })?;
-
-            let exit_status = process.wait()?;
-
-            self.update_data(|run_data| {
-                Ok(RunData {
-                    state: RunDataState::Done {
-                        exit_code: exit_status.code().unwrap_or(-1),
-                        end_datetime: Utc::now(),
-                    },
-                    ..run_data
-                })
-            })?;
+        #[derive(Serialize, Deserialize, Debug)]
+        enum Message {
+            Started,
+            Err(ForkedError),
         }
 
-        Ok(())
+        match fork().map_err(|e| Error::msg(format!("Failed to fork: error code {}", e)))? {
+            Fork::Child => {
+                close_fd().expect("couldn't close file descriptors in forked child process");
+                match self.spawn_process(command, label) {
+                    Ok(mut process) => {
+                        sender.send(Message::Started)?;
+
+                        let exit_status = process.wait()?;
+
+                        self.update_data(|run_data| {
+                            Ok(RunData {
+                                state: RunDataState::Done {
+                                    exit_code: exit_status.code().unwrap_or(-1),
+                                    end_datetime: Utc::now(),
+                                },
+                                ..run_data
+                            })
+                        })?;
+                        Ok(())
+                    }
+                    Err(e) => {
+                        // TODO delete this run's directory
+                        sender.send(Message::Err(e.clone()))?;
+                        Err(Error::from(e))
+                    }
+                }
+            }
+            Fork::Parent(_) => {
+                let message = receiver.recv().map_err(|_| {
+                    Error::msg(format!("Failed to communicate with forked process"))
+                })?;
+                match message {
+                    Message::Err(e) => Err(Error::from(e)),
+                    Message::Started => {
+                        println!("Started run {}", self.id);
+                        Ok(())
+                    }
+                }
+            }
+        }
     }
 }
 
