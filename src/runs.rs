@@ -9,6 +9,7 @@ use chrono::{DateTime, Utc};
 use fork::{daemon, Fork};
 use nix::unistd::Pid;
 use serde::{Deserialize, Serialize};
+use clap::crate_name;
 
 use uuid::Uuid;
 
@@ -52,7 +53,7 @@ fn ensure_dir_exists(path: PathBuf) -> Result<PathBuf> {
 
 impl Runs {
     pub fn new() -> Result<Self> {
-        let project_dirs = directories::ProjectDirs::from("com.github", "dccsillag", "rum")
+        let project_dirs = directories::ProjectDirs::from("com.github", "dccsillag", crate_name!())
             .ok_or(Error::msg("Couldn't get project directories"))?;
 
         let data_dir = project_dirs.data_local_dir().to_path_buf();
