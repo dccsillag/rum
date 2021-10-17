@@ -36,5 +36,7 @@ jobs:
       # TODO: strip executable?
       # TODO: tarball
       # TODO: upload tarball
-      - name: Publish archives and packages
-        uses: softprops/action-gh-release@v1
+      - name: Publish built binary
+        uses: actions/upload-artifact@v2
+        with:
+          files: target/release/rum
