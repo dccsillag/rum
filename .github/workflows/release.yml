@@ -1,11 +1,9 @@
-# Based on https://github.com/actions-rs/example/blob/master/.github/workflows/cross_compile.yml
-
 on:
   push:
     tags:
       - '*'
 
-name: Cross-compile
+name: Release
 
 jobs:
   build:
