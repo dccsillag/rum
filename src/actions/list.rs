@@ -15,15 +15,14 @@ pub fn list_runs(runs: &Runs) -> Result<()> {
     let mut runs = runs.into_iter().map(Result::unwrap).collect::<Vec<_>>();
     let bad_runs = bad_runs
         .into_iter()
-        .map(Result::unwrap_err)
-        .collect::<Vec<_>>();
+        .map(Result::unwrap_err);
     runs.sort_by_key(|(_, r)| r.start_datetime);
     runs.sort_by_key(|(_, r)| match r.state {
         RunDataState::Running { .. } => 0,
         RunDataState::Done { .. } => 1,
     });
 
-    for bad_run in bad_runs.into_iter() {
+    for bad_run in bad_runs {
         // TODO change into logging
         println!(
             "{}{}WARNING{}{}: Could not read run '{}'; ignoring it.",

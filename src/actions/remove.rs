@@ -14,7 +14,7 @@ pub fn remove_run(runs: &Runs, run: Run) -> Result<()> {
         } => {
             show_run_info(&run)?;
 
-            println!("");
+            println!();
 
             if dialoguer::Confirm::with_theme(&dialoguer::theme::ColorfulTheme::default())
                 .with_prompt("Are you sure you want to delete this run?")

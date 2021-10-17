@@ -56,7 +56,7 @@ pub fn open_run(run: &Run) -> Result<()> {
             Ok(())
         },
         || {
-            while let Some(key) = input.next() {
+            for key in &mut input {
                 match key? {
                     Key::Ctrl('c') => return Ok(true),
                     _ => (),

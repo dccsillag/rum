@@ -55,7 +55,7 @@ fn ensure_dir_exists(path: PathBuf) -> Result<PathBuf> {
 impl Runs {
     pub fn new() -> Result<Self> {
         let project_dirs = directories::ProjectDirs::from("com.github", "dccsillag", crate_name!())
-            .ok_or(Error::msg("Couldn't get project directories"))?;
+            .ok_or_else(|| Error::msg("Couldn't get project directories"))?;
 
         let data_dir = project_dirs.data_local_dir().to_path_buf();
 
@@ -193,8 +193,8 @@ impl Run {
             .map_err(|e| ForkedError::CouldntSetProcessGroup(e.desc().to_string()))?;
 
         self.set_data(&RunData {
-            command: command,
-            label: label,
+            command,
+            label,
             start_datetime: Utc::now(),
 
             state: RunDataState::Running { pgid: gid },
@@ -261,7 +261,7 @@ impl Run {
             }
             Fork::Parent(_) => {
                 let message = receiver.recv().map_err(|_| {
-                    Error::msg(format!("Failed to communicate with forked process"))
+                    Error::msg("Failed to communicate with forked process")
                 })?;
                 match message {
                     Message::Err(e) => Err(Error::from(e)),
