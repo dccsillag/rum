@@ -36,8 +36,10 @@ jobs:
       # TODO: strip executable?
       # TODO: tarball
       # TODO: upload tarball
+      - name: Rename built binary
+        run: mv target/${{ matrix.target }}/release/rum rum-${{ matrix.target }}
       - name: Publish built binary
-        uses: actions/upload-artifact@v2
+        uses: softprops/action-gh-release@v1
         with:
-          name: rum-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/rum
+          # name: rum-${{ matrix.target }}
+          files: rum-${{ matrix.target }}
