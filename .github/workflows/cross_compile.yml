@@ -39,4 +39,5 @@ jobs:
       - name: Publish built binary
         uses: actions/upload-artifact@v2
         with:
-          files: target/release/rum
+          name: rum-${{ matrix.target }}
+          path: target/release/rum
