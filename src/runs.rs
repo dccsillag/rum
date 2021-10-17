@@ -1,5 +1,4 @@
 use std::{
-    convert::TryInto,
     os::unix::prelude::{AsRawFd, FromRawFd},
     path::PathBuf,
     process::Child,
@@ -8,8 +7,8 @@ use std::{
 use anyhow::{Context, Error, Result};
 use chrono::{DateTime, Utc};
 use clap::crate_name;
-use fork::{fork, close_fd, Fork};
-use nix::unistd::Pid;
+use fork::{close_fd, fork, Fork};
+use nix::unistd::{getpgid, setpgid, Pid};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -30,7 +29,7 @@ pub struct RunData {
 pub enum RunDataState {
     Running {
         #[serde(with = "serde_nix_pid")]
-        pid: Pid,
+        pgid: Pid,
     },
     Done {
         end_datetime: DateTime<Utc>,
@@ -122,12 +121,12 @@ impl Runs {
 enum ForkedError {
     #[error("couldn't create output file: {message}")]
     CouldntCreateOutputFile { message: String },
+    #[error("couldn't set process group: {0}")]
+    CouldntSetProcessGroup(String),
     #[error("couldn't save run data: {message}")]
     CouldntSetData { message: String },
     #[error("failed to spawn process: {command}: {message}")]
     FailedToSpawn { command: String, message: String },
-    #[error("failed to wait for process to exit: {message}")]
-    FailedToWaitForProcess { message: String },
 }
 
 impl Run {
@@ -177,6 +176,8 @@ impl Run {
         })?;
         let output_file_raw = output_file.as_raw_fd();
 
+        let gid = getpgid(None).unwrap(); // this will always succeed, since we are getting the pgid of the current process
+
         let process = std::process::Command::new(command.first().unwrap())
             .args(&command[1..])
             .stdout(unsafe { std::process::Stdio::from_raw_fd(output_file_raw) })
@@ -188,14 +189,15 @@ impl Run {
                 message: e.to_string(),
             })?;
 
+        setpgid(Pid::from_raw(0), Pid::from_raw(0))
+            .map_err(|e| ForkedError::CouldntSetProcessGroup(e.desc().to_string()))?;
+
         self.set_data(&RunData {
             command: command,
             label: label,
             start_datetime: Utc::now(),
 
-            state: RunDataState::Running {
-                pid: Pid::from_raw(process.id().try_into().unwrap()),
-            },
+            state: RunDataState::Running { pgid: gid },
         })
         .map_err(|e| ForkedError::CouldntSetData {
             message: e.to_string(),
@@ -214,6 +216,9 @@ impl Run {
             Started,
             Err(ForkedError),
         }
+
+        setpgid(Pid::from_raw(0), Pid::from_raw(0))
+            .map_err(|e| Error::msg(format!("couldnt set run pgid: {}", e.desc())))?;
 
         match fork().map_err(|e| Error::msg(format!("Failed to fork: error code {}", e)))? {
             Fork::Child => {

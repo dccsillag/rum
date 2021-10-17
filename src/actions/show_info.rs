@@ -46,7 +46,7 @@ pub fn show_run_info(run: &Run) -> Result<()> {
             label,
             command,
             start_datetime,
-            state: RunDataState::Running { pid: _ },
+            state: RunDataState::Running { pgid: _ },
         } => {
             println!("Command:   {}", shell_words::join(command));
             label.map(|l| println!("Label:     {}", l));
