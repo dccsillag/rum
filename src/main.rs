@@ -38,8 +38,8 @@ enum Subcommand {
     /// Remove a run
     #[clap(name = "-remove", short_flag = 'r', long_flag = "remove")]
     Remove {
-        /// Which run to remove
-        run: String,
+        /// Which runs to remove
+        runs: Vec<String>,
     },
 
     /// Interrupt (SIGINT, i.e., Ctrl+C) a run
@@ -79,7 +79,7 @@ fn main() -> Result<()> {
         Subcommand::List => actions::list::list_runs(&runs),
         Subcommand::Info { run } => actions::show_info::show_run_info(&runs.get_run(&run)?),
         Subcommand::View { run } => actions::open::open_run(&runs.get_run(&run)?),
-        Subcommand::Remove { run } => actions::remove::remove_run(&runs, runs.get_run(&run)?),
+        Subcommand::Remove { runs: to_remove } => actions::remove::remove_runs(&runs, &to_remove),
         Subcommand::Interrupt { run } => {
             actions::send_signal::send_signal(&runs.get_run(&run)?, signal::Signal::SIGINT)
         }
