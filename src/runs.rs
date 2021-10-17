@@ -227,18 +227,30 @@ impl Run {
                     Ok(mut process) => {
                         sender.send(Message::Started)?;
 
-                        let exit_status = process.wait()?;
-
-                        self.update_data(|run_data| {
-                            Ok(RunData {
-                                state: RunDataState::Done {
-                                    exit_code: exit_status.code().unwrap_or(-1),
-                                    end_datetime: Utc::now(),
-                                },
-                                ..run_data
-                            })
-                        })?;
-                        Ok(())
+                        match process.wait() {
+                            Ok(exit_status) => {
+                                self.update_data(|run_data| {
+                                    Ok(RunData {
+                                        state: RunDataState::Done {
+                                            exit_code: exit_status.code().unwrap_or(-1),
+                                            end_datetime: Utc::now(),
+                                        },
+                                        ..run_data
+                                    })
+                                })
+                            }
+                            Err(_) => {
+                                self.update_data(|run_data| {
+                                    Ok(RunData {
+                                        state: RunDataState::Done {
+                                            exit_code: -2,
+                                            end_datetime: Utc::now(),
+                                        },
+                                        ..run_data
+                                    })
+                                })
+                            }
+                        }
                     }
                     Err(e) => {
                         sender.send(Message::Err(e.clone()))?;

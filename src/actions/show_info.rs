@@ -31,6 +31,11 @@ pub fn show_run_info(run: &Run) -> Result<()> {
                         color::Fg(color::Yellow),
                         color::Fg(color::Reset)
                     ),
+                    -2 => format!(
+                        "none ({}crashed{})",
+                        color::Fg(color::Magenta),
+                        color::Fg(color::Reset)
+                    ),
                     c => format!(
                         "{} ({}failed{})",
                         c,

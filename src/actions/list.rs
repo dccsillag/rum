@@ -53,6 +53,9 @@ pub fn list_runs(runs: &Runs) -> Result<()> {
             RunDataState::Done { exit_code: -1, .. } => {
                 print!("{}[killed] ", color::Fg(color::Yellow))
             }
+            RunDataState::Done { exit_code: -2, .. } => {
+                print!("{}[crashed] ", color::Fg(color::Magenta))
+            }
             RunDataState::Done { exit_code, .. } => {
                 print!("{}[failed:{}] ", color::Fg(color::Red), exit_code)
             }
