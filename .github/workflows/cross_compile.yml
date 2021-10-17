@@ -40,4 +40,4 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: rum-${{ matrix.target }}
-          path: target/release/rum
+          path: target/${{ matrix.target }}/release/rum
