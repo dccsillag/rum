@@ -3,25 +3,24 @@ pub mod runs;
 pub mod utils;
 
 use anyhow::{Context, Result};
-use clap::{crate_name, crate_version, Clap, AppSettings};
+use clap::{AppSettings, Parser};
 use nix::sys::signal;
 
 use runs::Runs;
 
-#[derive(Clap)]
+#[derive(Parser)]
 #[clap(
     about = "A tool to manage running jobs.",
-    name = crate_name!(),
-    version = crate_version!(),
-    override_usage = "rum <COMMAND> [<ARG> [<ARG> [...]]]\n    rum <SUBCOMMAND>",
+    version,
+    override_usage = "rum <COMMAND> [<ARG> [<ARG> [...]]]\n    rum <SUBCOMMAND>"
 )]
-#[clap(setting = AppSettings::DisableHelpSubcommand)]
+#[clap(setting(AppSettings::DisableHelpSubcommand))]
 struct Args {
     #[clap(subcommand)]
     subcommand: Subcommand,
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 enum Subcommand {
     /// List runs
     #[clap(name = "-list", short_flag = 'l', long_flag = "list")]

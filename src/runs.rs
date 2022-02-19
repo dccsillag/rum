@@ -6,7 +6,6 @@ use std::{
 
 use anyhow::{Context, Error, Result};
 use chrono::{DateTime, Utc};
-use clap::crate_name;
 use fork::{close_fd, fork, Fork};
 use nix::unistd::{getpgid, setpgid, Pid};
 use serde::{Deserialize, Serialize};
@@ -54,7 +53,7 @@ fn ensure_dir_exists(path: PathBuf) -> Result<PathBuf> {
 
 impl Runs {
     pub fn new() -> Result<Self> {
-        let project_dirs = directories::ProjectDirs::from("com.github", "dccsillag", crate_name!())
+        let project_dirs = directories::ProjectDirs::from("com.github", "dccsillag", "rum")
             .ok_or_else(|| Error::msg("Couldn't get project directories"))?;
 
         let data_dir = project_dirs.data_local_dir().to_path_buf();
@@ -228,28 +227,24 @@ impl Run {
                         sender.send(Message::Started)?;
 
                         match process.wait() {
-                            Ok(exit_status) => {
-                                self.update_data(|run_data| {
-                                    Ok(RunData {
-                                        state: RunDataState::Done {
-                                            exit_code: exit_status.code().unwrap_or(-1),
-                                            end_datetime: Utc::now(),
-                                        },
-                                        ..run_data
-                                    })
+                            Ok(exit_status) => self.update_data(|run_data| {
+                                Ok(RunData {
+                                    state: RunDataState::Done {
+                                        exit_code: exit_status.code().unwrap_or(-1),
+                                        end_datetime: Utc::now(),
+                                    },
+                                    ..run_data
                                 })
-                            }
-                            Err(_) => {
-                                self.update_data(|run_data| {
-                                    Ok(RunData {
-                                        state: RunDataState::Done {
-                                            exit_code: -2,
-                                            end_datetime: Utc::now(),
-                                        },
-                                        ..run_data
-                                    })
+                            }),
+                            Err(_) => self.update_data(|run_data| {
+                                Ok(RunData {
+                                    state: RunDataState::Done {
+                                        exit_code: -2,
+                                        end_datetime: Utc::now(),
+                                    },
+                                    ..run_data
                                 })
-                            }
+                            }),
                         }
                     }
                     Err(e) => {
@@ -260,9 +255,9 @@ impl Run {
                 }
             }
             Fork::Parent(_) => {
-                let message = receiver.recv().map_err(|_| {
-                    Error::msg("Failed to communicate with forked process")
-                })?;
+                let message = receiver
+                    .recv()
+                    .map_err(|_| Error::msg("Failed to communicate with forked process"))?;
                 match message {
                     Message::Err(e) => Err(Error::from(e)),
                     Message::Started => {
