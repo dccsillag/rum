@@ -3,7 +3,7 @@ pub mod runs;
 pub mod utils;
 
 use anyhow::{Context, Result};
-use clap::{AppSettings, Parser};
+use clap::Parser;
 use nix::sys::signal;
 
 use runs::Runs;
@@ -14,7 +14,7 @@ use runs::Runs;
     version,
     override_usage = "rum <COMMAND> [<ARG> [<ARG> [...]]]\n    rum <SUBCOMMAND>"
 )]
-#[clap(setting(AppSettings::DisableHelpSubcommand))]
+#[clap(disable_help_subcommand = true)]
 struct Args {
     #[clap(subcommand)]
     subcommand: Subcommand,
