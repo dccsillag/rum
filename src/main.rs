@@ -23,46 +23,46 @@ struct Args {
 #[derive(Parser)]
 enum Subcommand {
     /// List runs
-    #[clap(name = "-list", short_flag = 'l', long_flag = "list")]
+    #[clap(name = "-list", short_flag = 'l', long_flag = "list", display_order = 0)]
     List,
 
     /// Show information about a run
-    #[clap(name = "-info", short_flag = 'i', long_flag = "info")]
+    #[clap(name = "-info", short_flag = 'i', long_flag = "info", display_order = 1)]
     Info {
         /// Which run to show information on
         run: String,
     },
 
     /// View a run
-    #[clap(name = "-view", short_flag = 'v', long_flag = "view")]
+    #[clap(name = "-view", short_flag = 'v', long_flag = "view", display_order = 2)]
     View {
         /// Which run to view
         run: String,
     },
 
     /// Remove a run
-    #[clap(name = "-remove", short_flag = 'r', long_flag = "remove")]
+    #[clap(name = "-remove", short_flag = 'r', long_flag = "remove", display_order = 3)]
     Remove {
         /// Which runs to remove
         runs: Vec<String>,
     },
 
     /// Interrupt (SIGINT, i.e., Ctrl+C) a run
-    #[clap(name = "-interrupt", short_flag = 'c', long_flag = "interrupt")]
+    #[clap(name = "-interrupt", short_flag = 'c', long_flag = "interrupt", display_order = 4)]
     Interrupt {
         /// Which run to interrupt
         run: String,
     },
 
     /// Terminate (SIGTERM, i.e., kill <PID>) a run
-    #[clap(name = "-terminate", short_flag = 't', long_flag = "terminate")]
+    #[clap(name = "-terminate", short_flag = 't', long_flag = "terminate", display_order = 5)]
     Terminate {
         /// Which run to terminate
         run: String,
     },
 
     /// Kill (SIGKILL, i.e., kill -9 <PID>) a run
-    #[clap(name = "-kill", short_flag = 'K', long_flag = "kill")]
+    #[clap(name = "-kill", short_flag = 'K', long_flag = "kill", display_order = 6)]
     Kill {
         /// Which run to kill
         run: String,
