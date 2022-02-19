@@ -32,15 +32,13 @@ pub fn remove_run(runs: &Runs, run: Run) -> Result<()> {
     }
 }
 
-pub fn remove_runs(runs: &Runs, runs_to_remove: &Vec<String>) -> Result<()> {
+pub fn remove_runs(runs: &Runs, runs_to_remove: &[String]) -> Result<()> {
     let (good_runs, bad_runs): (Vec<_>, Vec<_>) = runs_to_remove
         .iter()
         .map(|r| runs.get_run(r))
         .partition(Result::is_ok);
     let good_runs = good_runs.into_iter().map(Result::unwrap);
-    let bad_runs = bad_runs
-        .into_iter()
-        .map(Result::unwrap_err);
+    let bad_runs = bad_runs.into_iter().map(Result::unwrap_err);
 
     for run in good_runs {
         remove_run(runs, run)?;

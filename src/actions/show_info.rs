@@ -1,7 +1,10 @@
 use anyhow::Result;
 use termion::color;
 
-use crate::{runs::{Run, RunData, RunDataState}, utils::format_datetime};
+use crate::{
+    runs::{Run, RunData, RunDataState},
+    utils::format_datetime,
+};
 
 pub fn show_run_info(run: &Run) -> Result<()> {
     match run.get_data()? {
@@ -16,7 +19,9 @@ pub fn show_run_info(run: &Run) -> Result<()> {
                 },
         } => {
             println!("Command:   {}", shell_words::join(command));
-            label.map(|l| println!("Label:     {}", l));
+            if let Some(label) = label {
+                println!("Label:     {label}");
+            }
             println!("Status:    finished");
             println!(
                 "Exit code: {}",
@@ -54,7 +59,9 @@ pub fn show_run_info(run: &Run) -> Result<()> {
             state: RunDataState::Running { pgid: _ },
         } => {
             println!("Command:   {}", shell_words::join(command));
-            label.map(|l| println!("Label:     {}", l));
+            if let Some(label) = label {
+                println!("Label:     {label}");
+            }
             println!("Status:    running");
             println!("Started:   {}", format_datetime(start_datetime));
         }

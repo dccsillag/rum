@@ -57,9 +57,8 @@ pub fn open_run(run: &Run) -> Result<()> {
         },
         || {
             for key in &mut input {
-                match key? {
-                    Key::Ctrl('c') => return Ok(true),
-                    _ => (),
+                if let Key::Ctrl('c') = key? {
+                    return Ok(true);
                 }
             }
             Ok(false)
