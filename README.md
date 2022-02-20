@@ -47,7 +47,7 @@ This ID is used to manage runs.
 To see more information about a run, use the `--info` subcommand:
 
 ```sh
-~ $ rum --info d00ba0ab  # or just `rum -i d00ba0ab`
+$ rum --info d00ba0ab  # or just `rum -i d00ba0ab`
 Command:   sleep 10
 Status:    finished
 Exit code: 0 (success)
@@ -58,7 +58,7 @@ Finished:  Fri Feb 18 22:36:54 2022
 Note how the identifier shown when we started the run is much longer than the one we passed to the `--info` subcommand, yet it still worked; that's because Rum allows for a very handy shorthand: if there is only one ID which starts with the characters you passed it, it will use that ID. So we could actually have run the command above as follows:
 
 ```sh
-~ $ rum --info d0  # or just `rum -i d0`
+$ rum --info d0  # or just `rum -i d0`
 Command:   sleep 10
 Status:    finished
 Exit code: 0 (success)
@@ -70,15 +70,15 @@ Using the first two characters of an ID is practical and almost always uniquely 
 
 Let's start a new run, which will take a very long time:
 
-```
+```sh
 $ rum python -c 'import time; time.sleep(1000)'
 Started run 5d7473cd-5ad5-45b8-a0f6-c01c4b3687c2
 ```
 
 If we do `rum --list` now, we see that it is running:
 
-```
-~ $ rum -l
+```sh
+$ rum -l
 5d7473cd [running] python -c 'import time; time.sleep(1000)'
          Started Fri Feb 18 22:47:10 2022
 d00ba0ab [done] sleep 10
@@ -93,13 +93,13 @@ Rule of thumb: prefer `-c`. If it doesn't work, fallback to `-t`. Use `-K` only 
 
 So let's use `--interrupt` (`-c`) on the Python run:
 
-```
+```sh
 $ rum --interrupt 5d  # or `rum -c 5d`
 ```
 
 Now, if we look at the output of `rum --list`:
 
-```
+```sh
 d00ba0ab [done] sleep 10
          Started Fri Feb 18 22:36:44 2022, Finished Fri Feb 18 22:36:54 2022
 740fbf4a [done] sh -c 'seq 10 | wc -l'
@@ -112,7 +112,7 @@ Note how Rum now displays the Python process, run `5d7473cd`, as `[killed]` (ins
 
 If we were to have a run which exited with non-zero exit code (i.e., it errored out):
 
-```
+```sh
 $ rum python -c 'print(not_in_scope)'
 Started run 605abbc1-dc36-4a90-bebf-94bc756100e0
 $ rum --list  # or `rum -l`
@@ -130,21 +130,21 @@ See how this new run is shown with `[failed:1]` -- this indicates that it exited
 
 You can also view the output of a run with the `--view` (`-v`) subcommand:
 
-```
-rum --view <RUN_ID>
-# or
-rum -v <RUN_ID>
+```sh
+$ rum --view <RUN_ID>
+ # or
+$ rum -v <RUN_ID>
 ```
 
 For example, if we were to run
 
-```
-rum -v 605abbc1
+```sh
+$ rum -v 605abbc1
 ```
 
 We'd be shown the following output:
 
-```
+```text
 Traceback (most recent call last):
   File "<string>", line 1, in <module>
 NameError: name 'not_in_scope' is not defined
@@ -156,7 +156,7 @@ The `--view` subcommand also works for runs which are still running, and automat
 
 Finally, after some time, the output of `rum --list` will begin to be a bit cluttered with runs which are no longer of importance. To aid this, there is the `--remove` (or `-r`) subcommand:
 
-```
+```sh
 $ rum --remove 74
 Command:   sh -c 'seq 10 | wc -l'
 Status:    finished
@@ -172,8 +172,8 @@ It prints information about the given run and asks for confirmation before remov
 
 You can also pass it multiple runs at once:
 
-```
-~ $ rum --remove 5d 60
+```sh
+$ rum --remove 5d 60
 Command:   python -c 'import time; time.sleep(1000)'
 Status:    finished
 Exit code: none (killed)
@@ -194,8 +194,8 @@ Deleted.
 
 And, if we were to run `rum --list` now, we are left with only our first `sleep 10` run.
 
-```
-~ $ rum --list
+```sh
+$ rum --list
 d00ba0ab [done] sleep 10
          Started Fri Feb 18 22:36:44 2022, Finished Fri Feb 18 22:36:54 2022
 ```
