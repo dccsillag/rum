@@ -6,22 +6,29 @@ use crate::{
     runs::{Run, RunData, RunDataState, Runs},
 };
 
-pub fn remove_run(runs: &Runs, run: Run) -> Result<()> {
+pub fn remove_run(runs: &Runs, run: Run, ask_for_confirmation: bool) -> Result<()> {
     match run.get_data()? {
         RunData {
             state: RunDataState::Done { .. },
             ..
         } => {
-            show_run_info(&run)?;
+            if ask_for_confirmation {
+                show_run_info(&run)?;
 
-            println!();
+                println!();
 
-            if dialoguer::Confirm::with_theme(&dialoguer::theme::ColorfulTheme::default())
-                .with_prompt("Are you sure you want to delete this run?")
-                .interact()?
-            {
+                if dialoguer::Confirm::with_theme(&dialoguer::theme::ColorfulTheme::default())
+                    .with_prompt("Are you sure you want to delete this run?")
+                    .interact()?
+                {
+                    let id = run.id.clone();
+                    runs.remove_run(run)?;
+                    println!("Deleted run '{id}'.");
+                }
+            } else {
+                let id = run.id.clone();
                 runs.remove_run(run)?;
-                println!("Deleted.");
+                println!("Deleted run '{id}'.");
             }
             Ok(())
         }
@@ -32,7 +39,11 @@ pub fn remove_run(runs: &Runs, run: Run) -> Result<()> {
     }
 }
 
-pub fn remove_runs(runs: &Runs, runs_to_remove: &[String]) -> Result<()> {
+pub fn remove_runs(
+    runs: &Runs,
+    runs_to_remove: &[String],
+    ask_for_confirmation: bool,
+) -> Result<()> {
     let (good_runs, bad_runs): (Vec<_>, Vec<_>) = runs_to_remove
         .iter()
         .map(|r| runs.get_run(r))
@@ -41,7 +52,7 @@ pub fn remove_runs(runs: &Runs, runs_to_remove: &[String]) -> Result<()> {
     let bad_runs = bad_runs.into_iter().map(Result::unwrap_err);
 
     for run in good_runs {
-        remove_run(runs, run)?;
+        remove_run(runs, run, ask_for_confirmation)?;
     }
 
     for error in bad_runs {
