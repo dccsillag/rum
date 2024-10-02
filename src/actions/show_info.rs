@@ -1,5 +1,5 @@
 use anyhow::Result;
-use termion::color;
+use colored::Colorize;
 
 use crate::{
     runs::{Run, RunData, RunDataState},
@@ -26,27 +26,10 @@ pub fn show_run_info(run: &Run) -> Result<()> {
             println!(
                 "Exit code: {}",
                 match exit_code {
-                    0 => format!(
-                        "0 ({}success{})",
-                        color::Fg(color::Green),
-                        color::Fg(color::Reset)
-                    ),
-                    -1 => format!(
-                        "none ({}killed{})",
-                        color::Fg(color::Yellow),
-                        color::Fg(color::Reset)
-                    ),
-                    -2 => format!(
-                        "none ({}crashed{})",
-                        color::Fg(color::Magenta),
-                        color::Fg(color::Reset)
-                    ),
-                    c => format!(
-                        "{} ({}failed{})",
-                        c,
-                        color::Fg(color::Red),
-                        color::Fg(color::Reset)
-                    ),
+                    0 => format!("0 ({})", "success".green()),
+                    -1 => format!("none ({})", "killed".yellow()),
+                    -2 => format!("none ({})", "crashed".magenta()),
+                    c => format!("{} ({})", c, "failed".red()),
                 }
             );
             println!("Started:   {}", format_datetime(start_datetime));

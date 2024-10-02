@@ -1,5 +1,5 @@
 use anyhow::Result;
-use termion::{color, style};
+use colored::Colorize;
 
 use crate::{
     runs::{RunData, RunDataState, Runs},
@@ -10,12 +10,14 @@ pub fn list_runs(runs: &Runs) -> Result<()> {
     let (runs, bad_runs): (Vec<_>, Vec<_>) = runs
         .get_all()?
         .iter()
-        .map(|r| r.get_data().map(|d| (r.id.clone(), d)).map_err(|_| r.id.clone()))
+        .map(|r| {
+            r.get_data()
+                .map(|d| (r.id.clone(), d))
+                .map_err(|_| r.id.clone())
+        })
         .partition(Result::is_ok);
     let mut runs = runs.into_iter().map(Result::unwrap).collect::<Vec<_>>();
-    let bad_runs = bad_runs
-        .into_iter()
-        .map(Result::unwrap_err);
+    let bad_runs = bad_runs.into_iter().map(Result::unwrap_err);
     runs.sort_by_key(|(_, r)| r.start_datetime);
     runs.sort_by_key(|(_, r)| match r.state {
         RunDataState::Running { .. } => 0,
@@ -25,11 +27,8 @@ pub fn list_runs(runs: &Runs) -> Result<()> {
     for bad_run in bad_runs {
         // TODO change into logging
         println!(
-            "{}{}WARNING{}{}: Could not read run '{}'; ignoring it.",
-            style::Bold,
-            color::Fg(color::Yellow),
-            color::Fg(color::Reset),
-            style::Reset,
+            "{}: Could not read run '{}'; ignoring it.",
+            "WARNING".bold().yellow(),
             bad_run,
         );
     }
@@ -44,50 +43,38 @@ pub fn list_runs(runs: &Runs) -> Result<()> {
         },
     ) in runs.into_iter()
     {
-        print!("{} {}", &run_id[..8], style::Bold);
+        print!("{} ", &run_id[..8]);
         match state {
             RunDataState::Done { exit_code: 0, .. } => {
-                print!("{}[done] ", color::Fg(color::Green))
+                print!("{}", "[done] ".green().bold())
             }
             RunDataState::Done { exit_code: -1, .. } => {
-                print!("{}[killed] ", color::Fg(color::Yellow))
+                print!("{}", "[killed] ".yellow().bold())
             }
             RunDataState::Done { exit_code: -2, .. } => {
-                print!("{}[crashed] ", color::Fg(color::Magenta))
+                print!("{}", "[crashed] ".magenta().bold())
             }
             RunDataState::Done { exit_code, .. } => {
-                print!("{}[failed:{}] ", color::Fg(color::Red), exit_code)
+                print!("{}", format!("[failed:{exit_code}] ").red().bold())
             }
             RunDataState::Running { .. } => {
-                print!("[running] ")
+                print!("{}", "[running] ".bold())
             }
         }
-        println!(
-            "{}{}{}",
-            color::Fg(color::Reset),
-            shell_words::join(command),
-            style::Reset
-        );
+        println!("{}", shell_words::join(command).bold(),);
         print!("         ");
         match state {
             RunDataState::Done { end_datetime, .. } => {
                 println!(
-                    "{}Started{} {}, {}Finished{} {}",
-                    style::Faint,
-                    style::Reset,
+                    "{} {}, {} {}",
+                    "Started".dimmed(),
                     format_datetime(start_datetime),
-                    style::Faint,
-                    style::Reset,
+                    "Finished".dimmed(),
                     format_datetime(end_datetime),
                 )
             }
             RunDataState::Running { .. } => {
-                println!(
-                    "{}Started{} {}",
-                    style::Faint,
-                    style::Reset,
-                    format_datetime(start_datetime),
-                );
+                println!("{} {}", "Started".dimmed(), format_datetime(start_datetime),);
             }
         }
     }

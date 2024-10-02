@@ -1,5 +1,5 @@
 use anyhow::{Error, Result};
-use termion::{color, style};
+use colored::Colorize;
 
 use crate::{
     actions::show_info::show_run_info,
@@ -56,14 +56,7 @@ pub fn remove_runs(
     }
 
     for error in bad_runs {
-        println!(
-            "{}{}ERROR{}{}: {}",
-            style::Bold,
-            color::Fg(color::Red),
-            color::Fg(color::Reset),
-            style::Reset,
-            error,
-        )
+        println!("{} {}", "ERROR".red().bold(), error,)
     }
 
     Ok(())
